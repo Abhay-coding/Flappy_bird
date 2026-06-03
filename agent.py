@@ -1,28 +1,42 @@
 import flappy_bird_gymnasium
 import gymnasium as gym
 import torch
-env = gym.make("FlappyBird-v0", render_mode="human")
+from dqn import DQN
+from experience_replay import ReplayMemory
 
 if torch.cuda.is_available():
     device="cuda"
+    print("yes")
 else:
     device="cpu"
 
 
-print(torch.cuda.is_available())
-print(torch.cuda.get_device_name(0))
+def run(self,is_training=True,render=False):
+    env = gym.make("FlappyBird-v0", render_mode="human" if render else None)
 
-state, _ = env.reset()
-while True:
-    # Next action:
-    # (feed the observation to your agent here)
-    action = env.action_space.sample()
+    num_states = env.observation_space.shape[0]
+    num_actions = env.action_space.n
 
-    # Processing:
-    next_state, reward, terminated, _, info = env.step(action)
-    
-    # Checking if the player is still alive
-    if terminated:
-        break
+    policy_dqn = DQN(num_states,num_actions).to(device)
 
-env.close()
+    state, _ = env.reset()
+
+    if is_training:
+        memory = ReplayMemory(10000)
+
+    while True:
+        # Next action:
+        # (feed the observation to your agent here)
+        action = env.action_space.sample()
+
+        # Processing:
+        next_state, reward, terminated, _, info = env.step(action)
+        
+        if is_training:
+            memory.append(state,action,next_state,reward,terminated)
+
+        # Checking if the player is still alive
+        if terminated:
+            break
+
+    env.close()
