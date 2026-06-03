@@ -3,6 +3,10 @@ import gymnasium as gym
 import torch
 from dqn import DQN
 from experience_replay import ReplayMemory
+import itertools
+import yaml
+import torch.nn as nn
+import torch.optimizer as optim
 
 if torch.cuda.is_available():
     device="cuda"
@@ -10,33 +14,75 @@ if torch.cuda.is_available():
 else:
     device="cpu"
 
+class Agent():
 
-def run(self,is_training=True,render=False):
-    env = gym.make("FlappyBird-v0", render_mode="human" if render else None)
+    def __init__(self,param_set):
+        self.param_set = param_set
 
-    num_states = env.observation_space.shape[0]
-    num_actions = env.action_space.n
+        with open("paramters.yaml","r") as f:
+            all_param_set = yaml.safe_load(f)
+            params = all_param_set[param_set]
 
-    policy_dqn = DQN(num_states,num_actions).to(device)
+        self.alpha              = params["alpha"]
+        self.gamma              = params["gamma"]
+        self.epsilon_init       = params["epsilon_init"]
+        self.epsilon_min        = params["epsilon_min"]
+        self.epsilon_decay      = params["epsilon_decay"]
 
-    state, _ = env.reset()
+        self.replay_memory_size = params["replay_memory_size"]
+        self.mini_batch_size    = params["mini_batch_size"]
 
-    if is_training:
-        memory = ReplayMemory(10000)
+        self.network_sync_rate  = params["network_sync_rate"]
+        self.reward_threshold   = params["reward_threshold"]
 
-    while True:
-        # Next action:
-        # (feed the observation to your agent here)
-        action = env.action_space.sample()
+        self.loss_fn = nn.MSELoss()
+        self.optimizer = None # Might use adam
 
-        # Processing:
-        next_state, reward, terminated, _, info = env.step(action)
+
+    def run(self,is_training=True,render=False):
+        env = gym.make("FlappyBird-v0", render_mode="human" if render else None)
+
+        num_states = env.observation_space.shape[0]
+        num_actions = env.action_space.n
+
+        policy_dqn = DQN(num_states,num_actions).to(device)
+
         
+
         if is_training:
-            memory.append(state,action,next_state,reward,terminated)
+            memory = ReplayMemory(self.replay_memory_size)
+            epsilon = self.epsilon_init
 
-        # Checking if the player is still alive
-        if terminated:
-            break
+        for episode itertools.count():
+            
+            state, _ = env.reset()
+            state = torch.tensor(state,dtype = torch.float,device=device)
+            episode_rewards = 0
+            terminated = False
 
-    env.close()
+            while not terminated:
+                if is_training and random.random()<epsilon:
+                    action = env.action_space.sample()
+                    action = torch.tensor(action,dtype = torch.long,device=device)
+                else:
+                    with torch.no_grad():
+                        action = policy_dqn(state.unsqueeze(dim=0)).squeeze().argmax()
+
+                # Processing:
+                next_state, reward, terminated, _, info = env.step(action.item())
+
+
+                reward = torch.tensor(reward,dtype = torch.float,device=device)
+                next_state = torch.tensor(next_state,dtype = torch.float,device=device)
+                
+                if is_training:
+                    memory.append(state,action,next_state,reward,terminated)
+
+                state = next_state
+                episode_rewards+=reward
+
+            print(f"for episode = {episode+1} having total reward = {episode_rewards} and epsilon = {epsilon}")
+        
+            #epsilon decay
+            epsilon = max(epsilon *self.epsilon_decay,self.epsilon_min)
+            # env.close()
