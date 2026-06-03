@@ -53,6 +53,13 @@ class Agent():
             memory = ReplayMemory(self.replay_memory_size)
             epsilon = self.epsilon_init
 
+            target_dqn = DQN(num_states,num_actions).to(device)
+            #copy the weight and bias value from policy to target
+            target_dqn.load_state_dict(policy_dqn.state_dict())
+
+            steps =0
+            self.optimizer = optim.Adam(policy_dqn.parameters(),lr = self.alpha)
+
         for episode itertools.count():
             
             state, _ = env.reset()
@@ -77,12 +84,49 @@ class Agent():
                 
                 if is_training:
                     memory.append(state,action,next_state,reward,terminated)
+                    steps+=1
 
                 state = next_state
                 episode_rewards+=reward
 
             print(f"for episode = {episode+1} having total reward = {episode_rewards} and epsilon = {epsilon}")
-        
-            #epsilon decay
-            epsilon = max(epsilon *self.epsilon_decay,self.epsilon_min)
+            if is_training:
+                #epsilon decay
+                epsilon = max(epsilon *self.epsilon_decay,self.epsilon_min)
+
+            if is_training and len(memory) >self.mini_batch_size:
+                #sample 
+                mini_batch = memory.sample(self.mini_batch_size)
+
+                optimize(mini_batch,policy_dqn,target_dqn)
+
+                #Sync the network
+                if steps >self.network_sync_rate:
+                    target_dqn.load_state_dict(policy_dqn.state_dict())
+                    steps = 0
             # env.close()
+    
+    def optimize(self, mini_batch, policy_dqn, target_dqn):
+        # get batch of experiences
+        states, actions, next_states, rewards, terminations = zip(*mini_batch)
+
+        states = torch.stack(states)
+        actions = torch.stack(actions)
+        next_states = torch.stack(next_states)
+        rewards = torch.stack(rewards)
+        terminations = torch.tensor(terminations).float().to(device)
+
+        # calculate target Q-values
+        with torch.no_grad():
+            target_q = rewards + (1 - terminations) * self.gamma * target_dqn(next_states).max(dim=1)[0]
+
+        # calculate current Q-values
+        current_q = policy_dqn(states).gather(dim=1, index=actions.unsqueeze(dim=1)).squeeze()
+
+        # compute loss
+        loss = self.loss_fn(current_q, target_q)
+
+        # optimize model
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
