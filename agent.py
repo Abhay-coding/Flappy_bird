@@ -97,8 +97,8 @@ class Agent:
 
                 next_state, reward, terminated, _, _ = env.step(action.item())
 
-                # ✅ BEST reward shaping
-                reward = reward + 0.1   # keep original env reward + survival bonus
+                
+                reward = reward + 0.1   
 
                 if terminated:
                     reward = -5
